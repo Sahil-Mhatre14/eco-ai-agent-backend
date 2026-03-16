@@ -26,6 +26,56 @@ def car_emissions(distance, mode):
     return round(emissions, 2)
 
 
+def estimate_cost(distance, mode):
+    """
+    Estimate cost in USD for different travel modes.
+    distance should be in miles.
+    """
+
+    cost_factors = {
+        "car": 0.58,      # $ per mile (gas + maintenance)
+        "bus": 0.15,      # $ per mile
+        "train": 0.12,    # $ per mile
+        "flight": 0.25    # $ per mile (rough estimate)
+    }
+
+    factor = cost_factors.get(mode)
+
+    if factor is None:
+        return None
+
+    cost = distance * factor
+
+    return round(cost, 2)
+
+
+def estimate_time(distance, mode):
+    """
+    Estimate travel time in hours for different travel modes.
+    distance should be in miles.
+    """
+
+    speed_factors = {
+        "car": 60,        # mph
+        "bus": 50,        # mph
+        "train": 70,      # mph
+        "flight": 500     # mph (cruising speed)
+    }
+
+    speed = speed_factors.get(mode)
+
+    if speed is None:
+        return None
+
+    time_hours = distance / speed
+
+    # Add buffer time for flights (takeoff/landing)
+    if mode == "flight":
+        time_hours += 1  # 1 hour for airport procedures
+
+    return round(time_hours, 2)
+
+
 def flight_emissions(origin, destination):
 
     url = "https://www.carboninterface.com/api/v1/estimates"

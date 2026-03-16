@@ -13,5 +13,50 @@ tools = [
     "required": ["origin", "destination"]
   }
  }
+},
+{
+ "type": "function",
+ "function": {
+  "name": "car_emissions",
+  "description": "Calculate carbon emissions for a travel mode",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "distance": {"type": "number"},
+      "mode": {"type": "string", "enum": ["car", "bus", "train", "flight"]}
+    },
+    "required": ["distance", "mode"]
+  }
+ }
+},
+{
+ "type": "function",
+ "function": {
+  "name": "estimate_cost",
+  "description": "Estimate travel cost for a mode",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "distance": {"type": "number"},
+      "mode": {"type": "string", "enum": ["car", "bus", "train", "flight"]}
+    },
+    "required": ["distance", "mode"]
+  }
+ }
+},
+{
+ "type": "function",
+ "function": {
+  "name": "estimate_time",
+  "description": "Estimate travel time for a mode",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "distance": {"type": "number"},
+      "mode": {"type": "string", "enum": ["car", "bus", "train", "flight"]}
+    },
+    "required": ["distance", "mode"]
+  }
+ }
 }
 ]
