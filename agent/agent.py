@@ -270,11 +270,8 @@ def run_agent(user_query):
     # Extract cities and constraints
     origin, destination, constraints = extract_cities(user_query)
 
-    if origin is None:
-        origin = input("Where are you starting from? ")
-
-    if destination is None:
-        destination = input("Where are you traveling to? ")
+    if origin is None or destination is None:
+        return "Sorry, I couldn't extract the origin and destination from your query. Please specify both locations clearly."
 
     # Airport codes
     origin_airport = airport_map.get(origin)
