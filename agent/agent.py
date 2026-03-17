@@ -77,15 +77,15 @@ Query:
 {user_query}
 """
 
-    response = call_llm([
-        {"role": "system", "content": "Extract travel locations and constraints."},
-        {"role": "user", "content": prompt}
-    ])
-
-    if not response:
-        raise Exception("Model returned empty response")
-
     try:
+        response = call_llm([
+            {"role": "system", "content": "Extract travel locations and constraints."},
+            {"role": "user", "content": prompt}
+        ])
+
+        if not response:
+            raise Exception("Empty response")
+
         start = response.find("{")
         end = response.rfind("}") + 1
 
@@ -97,9 +97,170 @@ Query:
 
         return origin, destination, constraints
 
-    except Exception:
-        print("Model response:", response)
-        raise Exception("Could not parse extraction")
+    except Exception as e:
+        print(f"LLM extraction failed: {e}")
+        # Fallback: simple parsing
+        query_lower = user_query.lower()
+
+        # Simple city extraction (very basic)
+        cities = []
+        for city in ["las vegas", "san jose", "san francisco", "los angeles", "new york", "chicago"]:
+            if city in query_lower:
+                cities.append(city.title())
+
+        origin = cities[0] if len(cities) > 0 else None
+        destination = cities[1] if len(cities) > 1 else None
+
+        # Extract constraints
+        constraints = {}
+        if "budget of $" in query_lower or "budget $" in query_lower:
+            # Extract number after budget
+            import re
+            budget_match = re.search(r'budget(?: of)? \$?(\d+)', query_lower)
+            if budget_match:
+                constraints['budget'] = budget_match.group(1)
+
+        if "within" in query_lower and "hour" in query_lower:
+            # Extract number before hours
+            hour_match = re.search(r'within (\d+) hours?', query_lower)
+            if hour_match:
+                constraints['max_time'] = f"{hour_match.group(1)} hours"
+
+        return origin, destination, constraints
+
+
+def evaluate_options_with_constraints(distance, constraints, flights=None):
+    """
+    Evaluate travel options considering emissions, cost, time, and user constraints.
+    Returns a detailed recommendation.
+    """
+
+    # Calculate all metrics
+    modes = ['car', 'bus', 'train', 'flight']
+    options = {}
+
+    for mode in modes:
+        emissions = car_emissions(distance, mode)
+        cost = estimate_cost(distance, mode)
+        time = estimate_time(distance, mode)
+        options[mode] = {
+            'emissions': emissions,
+            'cost': cost,
+            'time': time
+        }
+
+    # Sort by emissions (lowest first)
+    sorted_by_emissions = sorted(options.items(), key=lambda x: x[1]['emissions'])
+
+    # Check constraints
+    valid_options = []
+    reasoning = []
+
+    for mode, data in options.items():
+        valid = True
+        reasons = []
+
+        if 'budget' in constraints:
+            budget = float(constraints['budget'])
+            if data['cost'] > budget:
+                valid = False
+                reasons.append(f"exceeds budget (${data['cost']:.2f} > ${budget})")
+
+        if 'max_time' in constraints:
+            # Parse time constraint (e.g., "4 hours" -> 4)
+            max_time_str = constraints['max_time'].lower()
+            if 'hour' in max_time_str:
+                max_hours = float(max_time_str.split()[0])
+                if data['time'] > max_hours:
+                    valid = False
+                    reasons.append(f"exceeds time limit ({data['time']:.1f}h > {max_hours}h)")
+
+        if valid:
+            valid_options.append((mode, data))
+            if reasons:
+                reasoning.append(f"{mode.title()}: meets constraints")
+            else:
+                reasoning.append(f"{mode.title()}: meets all constraints")
+
+    # Build detailed response
+    response = f"Travel Analysis for {distance:.1f} miles:\n\n"
+
+    response += "All Options:\n"
+    for mode, data in options.items():
+        response += f"• {mode.title()}: {data['emissions']:.1f} kg CO2, ${data['cost']:.2f}, {data['time']:.1f} hours\n"
+
+    # Add flight details if available
+    if flights and len(flights) > 0:
+        response += f"\nAvailable Flights ({len(flights)} found):\n"
+        for i, f in enumerate(flights[:3]):  # Show up to 3 flights
+            response += f"• {f['airline']} {f['flight_number']}: {f['departure'][:10]} at {f['departure'][11:16]}\n"
+        if len(flights) > 3:
+            response += f"• ... and {len(flights)-3} more flights\n"
+
+    response += "\n"
+
+    if valid_options:
+        # Find best option considering constraints
+        if constraints:
+            response += f"Considering your constraints ({', '.join([f'{k}: {v}' for k, v in constraints.items()])}):\n"
+            response += "\n".join(reasoning) + "\n\n"
+
+            # Prioritize by emissions among valid options
+            best_option = min(valid_options, key=lambda x: x[1]['emissions'])
+            mode, data = best_option
+
+            response += f"🌱 Recommended: {mode.title()}\n"
+            response += f"• Carbon emissions: {data['emissions']:.1f} kg CO2 ({data['emissions']/sorted_by_emissions[0][1]['emissions']:.1f}x the lowest)\n"
+            response += f"• Estimated cost: ${data['cost']:.2f}\n"
+            response += f"• Travel time: {data['time']:.1f} hours\n"
+
+            # Add specific reasoning
+            if mode == 'train':
+                response += f"• Why train? It's the most sustainable option, producing {data['emissions']:.1f} kg CO2 - "
+                car_emissions_val = options['car']['emissions']
+                response += f"{car_emissions_val/data['emissions']:.0f}x less than driving alone.\n"
+            elif mode == 'flight' and flights:
+                response += f"• Why flight? It meets your time constraint and flights are available.\n"
+            elif mode == 'bus':
+                response += f"• Why bus? Good balance of emissions and cost for longer distances.\n"
+
+            # Compare to alternatives
+            alternatives = [opt for opt in valid_options if opt[0] != mode]
+            if alternatives:
+                response += f"\nAlternatives that also meet constraints:\n"
+                for alt_mode, alt_data in sorted(alternatives, key=lambda x: x[1]['emissions']):
+                    emissions_diff = alt_data['emissions'] - data['emissions']
+                    response += f"• {alt_mode.title()}: {alt_data['emissions']:.1f} kg CO2 ({'+' if emissions_diff > 0 else ''}{emissions_diff:.1f} kg), ${alt_data['cost']:.2f}, {alt_data['time']:.1f}h\n"
+        else:
+            # No constraints, recommend lowest emissions
+            best_option = sorted_by_emissions[0]
+            mode, data = best_option
+            response += f"🌱 Recommended (lowest emissions): {mode.title()}\n"
+            response += f"• Carbon emissions: {data['emissions']:.1f} kg CO2\n"
+            response += f"• Estimated cost: ${data['cost']:.2f}\n"
+            response += f"• Travel time: {data['time']:.1f} hours\n"
+    else:
+        response += "⚠️ No options meet all your constraints. Consider:\n"
+        response += "• Increasing your budget\n"
+        response += "• Allowing more travel time\n"
+        response += "• Choosing a different route\n\n"
+
+        # Show closest options
+        response += "Closest sustainable options:\n"
+        for mode, data in sorted(options.items(), key=lambda x: x[1]['emissions'])[:2]:
+            constraint_notes = []
+            if 'budget' in constraints and data['cost'] > float(constraints['budget']):
+                constraint_notes.append(f"over budget by ${data['cost'] - float(constraints['budget']):.2f}")
+            if 'max_time' in constraints:
+                max_time_str = constraints['max_time'].lower()
+                if 'hour' in max_time_str:
+                    max_hours = float(max_time_str.split()[0])
+                    if data['time'] > max_hours:
+                        constraint_notes.append(f"{data['time'] - max_hours:.1f}h too slow")
+            notes = f" ({', '.join(constraint_notes)})" if constraint_notes else ""
+            response += f"• {mode.title()}: {data['emissions']:.1f} kg CO2, ${data['cost']:.2f}, {data['time']:.1f}h{notes}\n"
+
+    return response
 
 
 def run_agent(user_query):
@@ -207,23 +368,33 @@ while considering travel time, cost, and user constraints.
 Explain your reasoning clearly.
 """
 
-    answer = call_llm([
-        {
-            "role": "system",
-            "content": "You are a sustainability AI agent helping reduce carbon footprint."
-        },
-        {"role": "user", "content": final_prompt}
-    ])
+    # Try to get LLM enhancement, but use constraint-aware evaluation as primary
+    try:
+        answer = call_llm([
+            {
+                "role": "system",
+                "content": "You are a sustainability AI agent helping reduce carbon footprint. Provide a brief, specific recommendation considering all factors."
+            },
+            {"role": "user", "content": final_prompt}
+        ])
+        if not answer or len(answer.strip()) < 20:
+            raise Exception("LLM response too short")
+    except Exception as e:
+        print(f"LLM call failed: {e}")
+        answer = None
 
-    if not answer:
-        answer = "The train is the lowest carbon option. Flights are faster but produce significantly higher emissions."
+    # Use constraint-aware evaluation as primary method
+    detailed_analysis = evaluate_options_with_constraints(distance, constraints, flights)
+
+    if answer and answer != "The train is the lowest carbon option. Flights are faster but produce significantly higher emissions.":
+        # LLM provided a good response, append it
+        detailed_analysis += f"\n\nAI Insights:\n{answer}"
+    else:
+        # Use the detailed analysis as is
+        pass
 
     return f"""
 Route: {origin} → {destination}
 
-{comparison}
-
-AI Sustainability Plan:
-
-{answer}
+{detailed_analysis}
 """
