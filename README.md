@@ -113,13 +113,29 @@ cd eco_agent_backend
 python main.py
 ```
 
+### API (FastAPI) Usage
+Once the backend is running, you can query the agent via HTTP:
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Travel from Las Vegas to San Jose sustainably"}'
+```
+
+Response format:
+```json
+{
+  "response": "...agent output..."
+}
+```
+
+### Web Interface
+Open your browser to `http://localhost:5173` and use the chat interface to ask travel questions.
+
 Example queries:
 - "Travel from Las Vegas to San Jose with a budget of $100 and within 4 hours"
 - "I need to get from New York to Boston sustainably"
 - "What's the greenest way to travel from Chicago to Miami under $200?"
-
-### Web Interface
-Open your browser to `http://localhost:5173` and use the chat interface to ask travel questions.
 
 ## 🧠 How It Works
 
