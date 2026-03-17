@@ -107,10 +107,23 @@ npm run dev
 
 ## 💡 Usage
 
-### Command Line Interface
+### Command Line Interface (Local)
 ```bash
 cd eco_agent_backend
-python main.py
+python cli.py
+```
+
+You can also run a single query (non-interactive):
+
+```bash
+python cli.py "Travel from Las Vegas to San Jose sustainably"
+```
+
+### API (FastAPI) Usage
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Travel from Las Vegas to San Jose sustainably"}'
 ```
 
 ### API (FastAPI) Usage
